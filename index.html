@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Platformer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #151826;
+      --panel: #1f2438;
+      --ink: #eef2ff;
+      --accent: #8b9dff;
+      --ground: #4f6d7a;
+      --goal: #59d98e;
+      --hazard: #ff5f7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 20% 10%, #2e3250, var(--bg) 48%);
+      color: var(--ink);
+      font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .game-shell {
+      width: min(92vw, 900px);
+      background: color-mix(in srgb, var(--panel) 85%, #000);
+      border: 1px solid #3f476e;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    }
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #51598a;
+      background: #2a3152;
+      font-weight: 600;
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+    }
+    canvas {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      display: block;
+      background: linear-gradient(#9fd3ff, #d0f0ff 62%, #cbf6b5);
+      border: 1px solid #506b72;
+      border-radius: 10px;
+    }
+    .controls {
+      opacity: .9;
+      font-size: .95rem;
+    }
+    kbd {
+      border: 1px solid #5c6598;
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      padding: 0 .4rem;
+      background: #2d355e;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <div class="hud">
+      <div class="controls">Move: <kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> • Jump: <kbd>W</kbd>/<kbd>↑</kbd>/<kbd>Space</kbd> • Restart: <kbd>R</kbd></div>
+      <div id="status" class="status">Reach the green goal!</div>
+    </div>
+    <canvas id="game" width="960" height="540" aria-label="Simple platformer game"></canvas>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    const gravity = 0.8;
+    const moveSpeed = 5;
+    const jumpPower = 15;
+
+    const level = {
+      spawn: { x: 80, y: 420 },
+      goal: { x: 865, y: 392, w: 42, h: 48 },
+      platforms: [
+        { x: 0, y: 490, w: 960, h: 50 },
+        { x: 140, y: 430, w: 120, h: 20 },
+        { x: 330, y: 375, w: 130, h: 18 },
+        { x: 530, y: 330, w: 120, h: 18 },
+        { x: 710, y: 295, w: 100, h: 18 },
+        { x: 790, y: 430, w: 140, h: 16 }
+      ],
+      hazards: [
+        { x: 270, y: 486, w: 40, h: 4 },
+        { x: 470, y: 486, w: 40, h: 4 },
+        { x: 670, y: 486, w: 40, h: 4 }
+      ]
+    };
+
+    const player = { x: 0, y: 0, w: 34, h: 44, vx: 0, vy: 0, onGround: false };
+    const keys = {};
+    let gameState = 'playing';
+
+    function resetPlayer() {
+      player.x = level.spawn.x;
+      player.y = level.spawn.y;
+      player.vx = 0;
+      player.vy = 0;
+      player.onGround = false;
+      gameState = 'playing';
+      statusText.textContent = 'Reach the green goal!';
+    }
+
+    function aabb(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function update() {
+      if (gameState !== 'playing') return;
+
+      const left = keys['ArrowLeft'] || keys['a'];
+      const right = keys['ArrowRight'] || keys['d'];
+      const jump = keys['ArrowUp'] || keys['w'] || keys[' '];
+
+      player.vx = (right ? moveSpeed : 0) - (left ? moveSpeed : 0);
+
+      if (jump && player.onGround) {
+        player.vy = -jumpPower;
+        player.onGround = false;
+      }
+
+      player.vy += gravity;
+      player.x += player.vx;
+
+      if (player.x < 0) player.x = 0;
+      if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+
+      player.y += player.vy;
+      player.onGround = false;
+
+      for (const platform of level.platforms) {
+        if (!aabb(player, platform)) continue;
+
+        const prevBottom = player.y + player.h - player.vy;
+        const prevTop = player.y - player.vy;
+
+        if (prevBottom <= platform.y + 1 && player.vy >= 0) {
+          player.y = platform.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+        } else if (prevTop >= platform.y + platform.h - 1 && player.vy < 0) {
+          player.y = platform.y + platform.h;
+          player.vy = 0;
+        } else {
+          if (player.vx > 0) player.x = platform.x - player.w;
+          if (player.vx < 0) player.x = platform.x + platform.w;
+        }
+      }
+
+      for (const hazard of level.hazards) {
+        if (aabb(player, { x: hazard.x, y: hazard.y - 20, w: hazard.w, h: 24 })) {
+          gameState = 'lost';
+          statusText.textContent = 'You hit spikes! Press R to restart.';
+        }
+      }
+
+      if (aabb(player, level.goal)) {
+        gameState = 'won';
+        statusText.textContent = 'You win! Press R to play again.';
+      }
+
+      if (player.y > canvas.height + 100) {
+        gameState = 'lost';
+        statusText.textContent = 'You fell off! Press R to restart.';
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#ffffff66';
+      for (let i = 0; i < 7; i++) {
+        ctx.beginPath();
+        ctx.arc(90 + i * 140, 80 + (i % 2) * 18, 28, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ground');
+      for (const p of level.platforms) {
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      }
+
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--hazard');
+      for (const hz of level.hazards) {
+        const count = Math.floor(hz.w / 10);
+        for (let i = 0; i < count; i++) {
+          const sx = hz.x + i * 10;
+          ctx.beginPath();
+          ctx.moveTo(sx, hz.y + hz.h);
+          ctx.lineTo(sx + 5, hz.y - 12);
+          ctx.lineTo(sx + 10, hz.y + hz.h);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--goal');
+      ctx.fillRect(level.goal.x, level.goal.y, level.goal.w, level.goal.h);
+      ctx.fillStyle = '#2e7f4f';
+      ctx.fillRect(level.goal.x + 6, level.goal.y + 7, 24, 16);
+
+      ctx.fillStyle = '#324376';
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(player.x + 7, player.y + 10, 6, 6);
+      ctx.fillRect(player.x + 21, player.y + 10, 6, 6);
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') resetPlayer();
+      keys[e.key] = true;
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) e.preventDefault();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+
+    resetPlayer();
+    loop();
+  </script>
+</body>
+</html>
